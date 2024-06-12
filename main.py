@@ -1,4 +1,5 @@
 import joblib
+import pandas as pd
 from sklearn.linear_model import SGDRegressor
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -13,51 +14,37 @@ def predict(data):
 
 
 class Item(BaseModel):
-    gender: str
     ethnicity: str
-    education: str
+    parental_level_of_education: str
     lunch: str
-    course: str
+    test_preparation_course: str
+    gender: str
 
 
 app = FastAPI()
 
-async def category_converter(data):
-    data = data.dict()
-    """ # Sample data form
-    {"gender": "male",
-    "ethnicity": "group A",
-    "education": "high school",
-    "lunch": "standard",
-    "course": "completed"
-    }
-    """
+# Load the encoders
+loaded_encoders = joblib.load('model/label_encoders.joblib')
+columns_to_encode = ['ethnicity', 'parental_level_of_education', 'lunch', 'test_preparation_course', 'gender']
 
-    gender = {'male': 1, 'female': 0}
-    ethnicity = {'group A': 0, 'group B': 1, 'group C': 2, 'group D': 3, 'group E': 4}
-    lunch = {'standard': 1, 'free/reduced': 0}
-    course = {'completed': 1, 'none': 0}
-    education = {'some high school': 5,
-                 'high school': 2,
-                 'some college': 4,
-                 "associate's degree": 0,
-                 "bachelor's degree": 1,
-                 "master's degree": 3}
 
-    # Converting categories to numerical values
-    data['gender'] = gender[data['gender']]
-    data['ethnicity'] = ethnicity[data['ethnicity']]
-    data['lunch'] = lunch[data['lunch']]
-    data['course'] = course[data['course']]
-    data['education'] = education[data['education']]
+def category_converter(item: Item):
+    new_data = item.dict()
+    new_df = pd.DataFrame([new_data])
 
-    return data
+    for column in columns_to_encode:
+        le = loaded_encoders[column]
+        print(f"Column: {column}, Categories: {le.classes_}")
+        new_df[column] = le.transform(new_df[column])
+        print(f"Transformed {column}: {new_df[column]}")
 
+    return new_df
 
 @app.post("/items/")
 async def create_item(item: Item):
-    item = await category_converter(item)
-    item = [list(item.values())]
+    item = category_converter(item)
+    item = list(item.values)
+    print(item)
     prediction = predict(item)
     return {"overall_score_prediction": prediction.tolist()}  # Convert numpy array to list
 
